@@ -1,0 +1,1 @@
+/usr/bin/g++  -g   CMakeFiles/AlphaBlending.dir/main.cpp.o  -o AlphaBlending 
