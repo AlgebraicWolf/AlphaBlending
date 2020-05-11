@@ -6,6 +6,13 @@
 
 using std::ifstream, std::ofstream, std::unique_ptr;
 
+struct free_deleter {
+    template <typename T>
+    void operator()(T *p) const {
+        std::free(const_cast<std::remove_const_t <T>*>(p));
+    }
+};
+
 template<typename T>
 void binWrite(const unique_ptr<ofstream> &out, T value) {
     out->write(reinterpret_cast<char *>(&value), sizeof(T));
@@ -79,7 +86,7 @@ private:
     unsigned int blueMask;
     unsigned int alphaMask;
     unsigned int CSType;
-    unique_ptr<unsigned char[]> image;
+    unique_ptr<unsigned char[], free_deleter> image;
 
 public:
 
@@ -103,9 +110,9 @@ BitMapImage::BitMapImage(const BitMapImage &other) : fileSize(other.fileSize), o
                                                      clrImportant(other.clrImportant), redMask(other.redMask),
                                                      greenMask(other.greenMask), blueMask(other.blueMask),
                                                      alphaMask(other.alphaMask), CSType(other.CSType),
-                                                     image(reinterpret_cast<unsigned char *>(aligned_alloc(32, width *
-                                                                                                               height *
-                                                                                                               4))) {
+                                                     image(static_cast<unsigned char *>(aligned_alloc(32, width *
+                                                                                                          height *
+                                                                                                          4))) {
     memcpy(image.get(), other.image.get(), width * height * 4);
 }
 
@@ -118,9 +125,7 @@ BitMapImage::BitMapImage(BitMapImage &&other) : fileSize(other.fileSize), offBit
                                                 Yppm(other.Yppm), clrUsed(other.clrUsed),
                                                 clrImportant(other.clrImportant), redMask(other.redMask),
                                                 greenMask(other.greenMask), blueMask(other.blueMask),
-                                                alphaMask(other.alphaMask), CSType(other.CSType) {
-    image = std::move(other.image);
-
+                                                alphaMask(other.alphaMask), CSType(other.CSType), image(std::move(other.image)) {
     other.fileSize = 0;
     other.offBits = 0;
     other.structSize = 0;
@@ -141,7 +146,7 @@ BitMapImage::BitMapImage(BitMapImage &&other) : fileSize(other.fileSize), offBit
     other.CSType = 0;
 }
 
-BitMapImage& BitMapImage::operator=(const BitMapImage &other) {
+BitMapImage &BitMapImage::operator=(const BitMapImage &other) {
     fileSize = other.fileSize;
     offBits = other.offBits;
     structSize = other.structSize;
@@ -161,7 +166,7 @@ BitMapImage& BitMapImage::operator=(const BitMapImage &other) {
     alphaMask = other.alphaMask;
     CSType = other.CSType;
 
-    image.reset(reinterpret_cast<unsigned char *>(aligned_alloc(32, width * height * 4)));
+    image.reset(static_cast<unsigned char *>(aligned_alloc(32, width * height * 4)));
     memcpy(image.get(), other.image.get(), width * height * 4);
 }
 
@@ -251,10 +256,10 @@ BitMapImage::BitMapImage(const char *filename) {
         structSize = 108;
     }
 
-    size_t imagebytes = width * height * 4;
-
-    image.reset((unsigned char *) aligned_alloc(32, imagebytes));
-    input->read(reinterpret_cast<char *>(image.get()), imagebytes);
+//    image = unique_ptr<unsigned char []>((unsigned char *) aligned_alloc(32, imagebytes));
+    image = unique_ptr<unsigned char[], free_deleter>(static_cast<unsigned char *>(aligned_alloc(32, width * height * 4)));
+    memset(image.get(), 0xFF, width * height * 4);
+    input->read(reinterpret_cast<char *>(image.get()), width * height * 4 + 1);
 }
 
 void BitMapImage::Save(const char *filename) {
@@ -324,6 +329,8 @@ int main() {
     BitMapImage frg("AskhatCat.BMP");
 
     bkg.Blend(frg, 300, 230);
+
+    free(aligned_alloc(32, 16));
 
     bkg.Save("blended.bmp");
 }
