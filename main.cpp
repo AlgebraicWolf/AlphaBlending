@@ -141,6 +141,30 @@ BitMapImage::BitMapImage(BitMapImage &&other) : fileSize(other.fileSize), offBit
     other.CSType = 0;
 }
 
+BitMapImage& BitMapImage::operator=(const BitMapImage &other) {
+    fileSize = other.fileSize;
+    offBits = other.offBits;
+    structSize = other.structSize;
+    width = other.width;
+    height = other.height;
+    planes = other.planes;
+    bitCount = other.bitCount;
+    compression = other.compression;
+    imageSize = other.imageSize;
+    Xppm = other.Xppm;
+    Yppm = other.Yppm;
+    clrUsed = other.clrUsed;
+    clrImportant = other.clrImportant;
+    redMask = other.redMask;
+    greenMask = other.greenMask;
+    blueMask = other.blueMask;
+    alphaMask = other.alphaMask;
+    CSType = other.CSType;
+
+    image.reset(reinterpret_cast<unsigned char *>(aligned_alloc(32, width * height * 4)));
+    memcpy(image.get(), other.image.get(), width * height * 4);
+}
+
 BitMapImage::~BitMapImage() = default;
 
 BitMapImage::BitMapImage(const char *filename) {
