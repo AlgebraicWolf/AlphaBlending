@@ -2,45 +2,48 @@
 #include <fstream>
 #include <functional>
 #include <memory>
+#include <cstring>
 
 using std::ifstream, std::ofstream, std::unique_ptr;
 
 template<typename T>
-void binWrite(const unique_ptr<ofstream>& out, T value) {
+void binWrite(const unique_ptr<ofstream> &out, T value) {
     out->write(reinterpret_cast<char *>(&value), sizeof(T));
 }
 
 class binaryWriter {
 private:
-    const unique_ptr<ofstream>& out;
+    const unique_ptr<ofstream> &out;
 public:
-    binaryWriter(const unique_ptr<ofstream>& out) : out(out) {}
+    binaryWriter(const unique_ptr<ofstream> &out) : out(out) {}
+
     ~binaryWriter() = default;
 
     template<typename T>
-    void operator() (T value) {
+    void operator()(T value) {
         binWrite(out, value);
     }
 };
 
-template <typename T>
-void parseValue(T& to, const unique_ptr<unsigned char []>& arr, size_t& offset) {
+template<typename T>
+void parseValue(T &to, const unique_ptr<unsigned char[]> &arr, size_t &offset) {
     to = *reinterpret_cast<T *>(arr.get() + offset);
     offset += sizeof(T);
 }
 
 class parserWrapper {
 private:
-    size_t& offset;
-    const unique_ptr<unsigned char []>& arr;
+    size_t &offset;
+    const unique_ptr<unsigned char[]> &arr;
 
 public:
     template<typename T>
-    void operator()(T& dst) {
+    void operator()(T &dst) {
         parseValue(dst, arr, offset);
     }
 
-    parserWrapper(size_t &offset, const unique_ptr<unsigned char []>& arr) : arr(arr), offset(offset) {}
+    parserWrapper(size_t &offset, const unique_ptr<unsigned char[]> &arr) : arr(arr), offset(offset) {}
+
     ~parserWrapper() = default;
 };
 
@@ -76,10 +79,6 @@ private:
     unsigned int blueMask;
     unsigned int alphaMask;
     unsigned int CSType;
-    CIEXYZTRIPLE endpoints;
-    unsigned int gammaRed;
-    unsigned int gammaGreen;
-    unsigned int gammaBlue;
     unique_ptr<unsigned char[]> image;
 
 public:
@@ -91,14 +90,16 @@ public:
     BitMapImage &operator=(BitMapImage &&other);            // Move assignment
     ~BitMapImage() noexcept;                               // Destructor
 
-    BitMapImage Blend(const BitMapImage &foreground);       // Use alpha-blending to add picture on top
+    void Blend(const BitMapImage &foreground, int x, int y);       // Use alpha-blending to add picture on top
     void Save(const char *filename);                        // Save BMP picture to file
 };
+
+
 
 BitMapImage::~BitMapImage() = default;
 
 BitMapImage::BitMapImage(const char *filename) {
-    unique_ptr<unsigned char []> bitmapFileHeader = std::make_unique<unsigned char []>(14);
+    unique_ptr<unsigned char[]> bitmapFileHeader = std::make_unique<unsigned char[]>(18);
 
     unique_ptr<ifstream> input = std::make_unique<ifstream>();
     input->open(filename, std::ios::binary | std::ios::in);
@@ -129,7 +130,7 @@ BitMapImage::BitMapImage(const char *filename) {
     if (structSize < 108)
         throw std::runtime_error("Only BMP v4 and BMP v5 are supported");
 
-    unique_ptr<unsigned char []> bitmapHeader = std::make_unique<unsigned char []>(structSize);
+    unique_ptr<unsigned char[]> bitmapHeader = std::make_unique<unsigned char[]>(structSize);
 
     input->read(reinterpret_cast<char *>(bitmapHeader.get()), structSize);
 
@@ -176,7 +177,7 @@ BitMapImage::BitMapImage(const char *filename) {
 
     offset += 48;      // Skip color whatever
 
-    if(structSize == 124) {
+    if (structSize == 124) {
         offBits -= 16;
         structSize = 108;
     }
@@ -225,7 +226,35 @@ void BitMapImage::Save(const char *filename) {
     output->write(reinterpret_cast<char *>(image.get()), width * height * 4);
 }
 
+void BitMapImage::Blend(const BitMapImage &foreground, int x, int y) {
+    for (int ycur = 0; ycur < foreground.height; ycur++) {
+        for (int xcur = 0; xcur < foreground.width; xcur++) {
+            unsigned int red_bkg = image[((y + ycur) * width + x + xcur) * 4 + 2];
+            unsigned int green_bkg = image[((y + ycur) * width + x + xcur) * 4 + 1];
+            unsigned int blue_bkg = image[((y + ycur) * width + x + xcur) * 4];
+
+            unsigned int red_frg = foreground.image[(ycur * foreground.width + xcur) * 4 + 2];
+            unsigned int green_frg = foreground.image[(ycur * foreground.width + xcur) * 4 + 2];
+            unsigned int blue_frg = foreground.image[(ycur * foreground.width + xcur) * 4 + 2];
+
+            unsigned int alpha = foreground.image[(ycur * foreground.width + xcur) * 4 + 3];
+
+            unsigned int red_res = (red_bkg * (255 - alpha) + red_frg * alpha) / 256;
+            unsigned int green_res = (green_bkg * (255 - alpha) + green_frg * alpha) / 256;
+            unsigned int blue_res = (blue_bkg * (255 - alpha) + blue_frg * alpha) / 256;
+
+            image[((y + ycur) * width + x + xcur) * 4 + 2] = red_res;
+            image[((y + ycur) * width + x + xcur) * 4 + 1] = green_res;
+            image[((y + ycur) * width + x + xcur) * 4] = blue_res;
+        }
+    }
+}
+
 int main() {
-    BitMapImage img("in.bmp");
-    img.Save("out.bmp");
+    BitMapImage bkg("Table.BMP");
+    BitMapImage frg("AskhatCat.BMP");
+
+    bkg.Blend(frg, 300, 230);
+
+    bkg.Save("blended.bmp");
 }
