@@ -1,10 +1,12 @@
-#include <iostream>
-#include <fstream>
-#include <functional>
+#include <cstdio>
 #include <memory>
 #include <cstring>
 
-using std::ifstream, std::ofstream, std::unique_ptr;
+const unsigned int BMP_FILE_HEADER_SIZE = 14;
+const unsigned int BMP_V4_HEADER_SIZE = 108;
+const unsigned int BMP_V5_HEADER_SIZE = 124;
+
+using std::unique_ptr;
 
 struct free_deleter {
     template <typename T>
@@ -14,21 +16,23 @@ struct free_deleter {
 };
 
 template<typename T>
-void binWrite(const unique_ptr<ofstream> &out, T value) {
-    out->write(reinterpret_cast<char *>(&value), sizeof(T));
+void bufWrite(const unique_ptr<unsigned char []> &out, T value, size_t& offset) {
+    memcpy(out.get() + offset, &value, sizeof(T));
+    offset += sizeof(T);
 }
 
-class binaryWriter {
+class bufferWriter {
 private:
-    const unique_ptr<ofstream> &out;
+    const unique_ptr<unsigned char []> &out;
+    size_t offset;
 public:
-    binaryWriter(const unique_ptr<ofstream> &out) : out(out) {}
+    bufferWriter(const unique_ptr<unsigned char []> &out) : out(out), offset(0) {}
 
-    ~binaryWriter() = default;
+    ~bufferWriter() = default;
 
     template<typename T>
     void operator()(T value) {
-        binWrite(out, value);
+        bufWrite(out, value, offset);
     }
 };
 
@@ -172,13 +176,14 @@ BitMapImage &BitMapImage::operator=(const BitMapImage &other) {
 
 BitMapImage::~BitMapImage() = default;
 
+
+
 BitMapImage::BitMapImage(const char *filename) {
-    unique_ptr<unsigned char[]> bitmapFileHeader = std::make_unique<unsigned char[]>(18);
+    unique_ptr<unsigned char[]> bitmapFileHeader = std::make_unique<unsigned char[]>(BMP_V4_HEADER_SIZE + BMP_FILE_HEADER_SIZE);
 
-    unique_ptr<ifstream> input = std::make_unique<ifstream>();
-    input->open(filename, std::ios::binary | std::ios::in);
+    unique_ptr<FILE, int(*)(FILE *)> input (fopen(filename, "rb"), &fclose);
 
-    input->read(reinterpret_cast<char *>(bitmapFileHeader.get()), 18);
+    fread(bitmapFileHeader.get(), sizeof(unsigned char), BMP_V4_HEADER_SIZE + BMP_FILE_HEADER_SIZE, input.get());      // Read file header with BMP V4 Image header
 
     size_t offset = 0;
 
@@ -204,69 +209,62 @@ BitMapImage::BitMapImage(const char *filename) {
     if (structSize < 108)
         throw std::runtime_error("Only BMP v4 and BMP v5 are supported");
 
-    unique_ptr<unsigned char[]> bitmapHeader = std::make_unique<unsigned char[]>(structSize);
-
-    input->read(reinterpret_cast<char *>(bitmapHeader.get()), structSize);
-
-    offset = 0;
-    auto imageHeaderParser = parserWrapper(offset, bitmapHeader);
-
-    imageHeaderParser(width);                 // Read image width
-    imageHeaderParser(height);           // Read image height
-    imageHeaderParser(planes);           // Read number of planes
+    fileHeaderParser(width);                 // Read image width
+    fileHeaderParser(height);           // Read image height
+    fileHeaderParser(planes);           // Read number of planes
 
     if (planes != 1)
         throw std::runtime_error("Invalid number of planes (Must be 1)");
 
-    imageHeaderParser(bitCount);         // Read depth of image
+    fileHeaderParser(bitCount);         // Read depth of image
 
     if (bitCount != 32)
         throw std::runtime_error("Only 32-bit pixels are supported");
 
-    imageHeaderParser(compression);      // Read compression type
+    fileHeaderParser(compression);      // Read compression type
 
     if (compression != 6 && compression != 3)
         throw std::runtime_error("Only images with bitmask are supported");
 
-    imageHeaderParser(imageSize);        // Read image size
-    imageHeaderParser(Xppm);             // Read PPM for X axis
-    imageHeaderParser(Yppm);             // Read PPM for Y axis
+    fileHeaderParser(imageSize);        // Read image size
+    fileHeaderParser(Xppm);             // Read PPM for X axis
+    fileHeaderParser(Yppm);             // Read PPM for Y axis
 
-    imageHeaderParser(clrUsed);          // Read size of color table
+    fileHeaderParser(clrUsed);          // Read size of color table
 
     if (clrUsed != 0)
         throw std::runtime_error("Color table is not supported");
 
-    imageHeaderParser(clrImportant);     // Number of important colors in table
+    fileHeaderParser(clrImportant);     // Number of important colors in table
 
-    imageHeaderParser(redMask);          // Mask for red channel
-    imageHeaderParser(greenMask);        // Mask for green chanel
-    imageHeaderParser(blueMask);         // Mask for blue channel
-    imageHeaderParser(alphaMask);        // Mask for alpha channel
+    fileHeaderParser(redMask);          // Mask for red channel
+    fileHeaderParser(greenMask);        // Mask for green chanel
+    fileHeaderParser(blueMask);         // Mask for blue channel
+    fileHeaderParser(alphaMask);        // Mask for alpha channel
 
-    imageHeaderParser(CSType);           // Color space type
+    fileHeaderParser(CSType);           // Color space type
 
     if (!CSType)
         throw std::runtime_error("Custom color space is not supported");
 
     offset += 48;      // Skip color whatever
 
-    if (structSize == 124) {
+    if (structSize == BMP_V5_HEADER_SIZE) {
         offBits -= 16;
         structSize = 108;
+        fseek(input.get(), BMP_V5_HEADER_SIZE - BMP_V4_HEADER_SIZE, SEEK_CUR);    // Skip "redundant" bytes (F in chat)
     }
 
-//    image = unique_ptr<unsigned char []>((unsigned char *) aligned_alloc(32, imagebytes));
+
     image = unique_ptr<unsigned char[], free_deleter>(static_cast<unsigned char *>(aligned_alloc(32, width * height * 4)));
-    memset(image.get(), 0xFF, width * height * 4);
-    input->read(reinterpret_cast<char *>(image.get()), width * height * 4 + 1);
+
+    fread(image.get(), sizeof(unsigned char), imageSize, input.get());
 }
 
 void BitMapImage::Save(const char *filename) {
-    unique_ptr<ofstream> output = std::make_unique<ofstream>();
-    output->open(filename, std::ios::out | std::ios::binary);
+    unique_ptr<unsigned char []> outBuffer (new unsigned char [BMP_FILE_HEADER_SIZE + BMP_V4_HEADER_SIZE]);
 
-    auto writer = binaryWriter(output);
+    auto writer = bufferWriter(outBuffer);
 
     writer(static_cast<unsigned short>(0x4d42));      // Bitmap image signature
     writer(fileSize);                                    // Filesize
@@ -297,40 +295,36 @@ void BitMapImage::Save(const char *filename) {
     writer(static_cast<unsigned long long> (0));
     writer(static_cast<unsigned long long> (0));
 
-    output->write(reinterpret_cast<char *>(image.get()), width * height * 4);
+    unique_ptr<FILE, decltype(&fclose)> output(fopen(filename, "wb"), &fclose);
+    fwrite(outBuffer.get(), sizeof(unsigned char), BMP_V4_HEADER_SIZE + BMP_FILE_HEADER_SIZE, output.get());
+    fwrite(image.get(), sizeof(unsigned char), imageSize, output.get());
 }
 
 void BitMapImage::Blend(const BitMapImage &foreground, int x, int y) {
+    unsigned char *bkg_ptr = image.get();
+    unsigned char *frg_ptr = foreground.image.get();
+
     for (int ycur = 0; ycur < foreground.height; ycur++) {
         for (int xcur = 0; xcur < foreground.width; xcur++) {
-            unsigned int red_bkg = image[((y + ycur) * width + x + xcur) * 4 + 2];
-            unsigned int green_bkg = image[((y + ycur) * width + x + xcur) * 4 + 1];
-            unsigned int blue_bkg = image[((y + ycur) * width + x + xcur) * 4];
+            unsigned char alpha = foreground.image[(ycur * foreground.width + xcur) * 4 + 3];
 
-            unsigned int red_frg = foreground.image[(ycur * foreground.width + xcur) * 4 + 2];
-            unsigned int green_frg = foreground.image[(ycur * foreground.width + xcur) * 4 + 2];
-            unsigned int blue_frg = foreground.image[(ycur * foreground.width + xcur) * 4 + 2];
+            size_t bkg_pos = ((y + ycur) * width + x + xcur) * 4;
+            size_t frg_pos = (ycur * foreground.width + xcur) * 4;
 
-            unsigned int alpha = foreground.image[(ycur * foreground.width + xcur) * 4 + 3];
-
-            unsigned int red_res = (red_bkg * (255 - alpha) + red_frg * alpha) / 256;
-            unsigned int green_res = (green_bkg * (255 - alpha) + green_frg * alpha) / 256;
-            unsigned int blue_res = (blue_bkg * (255 - alpha) + blue_frg * alpha) / 256;
-
-            image[((y + ycur) * width + x + xcur) * 4 + 2] = red_res;
-            image[((y + ycur) * width + x + xcur) * 4 + 1] = green_res;
-            image[((y + ycur) * width + x + xcur) * 4] = blue_res;
+            bkg_ptr[bkg_pos + 2] = (bkg_ptr[bkg_pos + 2] * (256 - alpha) + frg_ptr[frg_pos + 2] * alpha) / 256;
+            bkg_ptr[bkg_pos + 1] = (bkg_ptr[bkg_pos + 1] * (256 - alpha) + frg_ptr[frg_pos + 1] * alpha) / 256;
+            bkg_ptr[bkg_pos] = (bkg_ptr[bkg_pos] * (256 - alpha) + frg_ptr[frg_pos] * alpha) / 256;
         }
     }
 }
 
 int main() {
-    BitMapImage bkg("Table.BMP");
-    BitMapImage frg("AskhatCat.BMP");
+    BitMapImage bkg("Hood.BMP");
+    BitMapImage frg("Cat.BMP");
 
-    bkg.Blend(frg, 300, 230);
-
-    free(aligned_alloc(32, 16));
+    for(int i = 0; i < 1; i++) {
+        bkg.Blend(frg, 328, 245);
+    }
 
     bkg.Save("blended.bmp");
 }

@@ -7,11 +7,7 @@
 #IncludeRegexTransform: 
 
 /home/alexey/Programming/AlphaBlending/main.cpp
-iostream
--
-fstream
--
-functional
+cstdio
 -
 memory
 -
