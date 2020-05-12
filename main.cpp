@@ -91,66 +91,21 @@ private:
     unsigned int alphaMask;
     unsigned int CSType;
     unique_ptr<unsigned char[], free_deleter> image;
-
 public:
 
-    explicit BitMapImage(const char *filename);             // Default constructor loading image
-    BitMapImage(const BitMapImage &other);                  // Copy constructor
-    BitMapImage(BitMapImage &&other);                       // Move constructor
-    BitMapImage &operator=(const BitMapImage &other);       // Copy assignment
-    BitMapImage &operator=(BitMapImage &&other);            // Move assignment
-    ~BitMapImage() noexcept;                               // Destructor
+    explicit BitMapImage(const char *filename);                      // Default constructor loading image
+    void deepCopy(const BitMapImage& other);                         // Actually copy assignment
+    BitMapImage(BitMapImage &&other) noexcept;                       // Move constructor
+    BitMapImage(const BitMapImage &other) = delete;                  // Implicit copying is prohibited
+    BitMapImage &operator=(const BitMapImage &other) = delete;       // No implicit copying in order to avoid memory issues
+    BitMapImage &operator=(BitMapImage &&other);                     // Move assignment
+    ~BitMapImage() noexcept = default;                               // Destructor
 
     void Blend(const BitMapImage &foreground, int x, int y);       // Use alpha-blending to add picture on top
     void Save(const char *filename);                        // Save BMP picture to file
 };
 
-BitMapImage::BitMapImage(const BitMapImage &other) : fileSize(other.fileSize), offBits(other.offBits),
-                                                     structSize(other.structSize), width(other.width),
-                                                     height(other.height), planes(other.planes),
-                                                     bitCount(other.bitCount), compression(other.compression),
-                                                     imageSize(other.imageSize), Xppm(other.Xppm),
-                                                     Yppm(other.Yppm), clrUsed(other.clrUsed),
-                                                     clrImportant(other.clrImportant), redMask(other.redMask),
-                                                     greenMask(other.greenMask), blueMask(other.blueMask),
-                                                     alphaMask(other.alphaMask), CSType(other.CSType),
-                                                     image(static_cast<unsigned char *>(aligned_alloc(32, width *
-                                                                                                          height *
-                                                                                                          4))) {
-    memcpy(image.get(), other.image.get(), width * height * 4);
-}
-
-
-BitMapImage::BitMapImage(BitMapImage &&other) : fileSize(other.fileSize), offBits(other.offBits),
-                                                structSize(other.structSize), width(other.width),
-                                                height(other.height), planes(other.planes),
-                                                bitCount(other.bitCount), compression(other.compression),
-                                                imageSize(other.imageSize), Xppm(other.Xppm),
-                                                Yppm(other.Yppm), clrUsed(other.clrUsed),
-                                                clrImportant(other.clrImportant), redMask(other.redMask),
-                                                greenMask(other.greenMask), blueMask(other.blueMask),
-                                                alphaMask(other.alphaMask), CSType(other.CSType), image(std::move(other.image)) {
-    other.fileSize = 0;
-    other.offBits = 0;
-    other.structSize = 0;
-    other.width = 0;
-    other.height = 0;
-    other.planes = 0;
-    other.bitCount = 0;
-    other.compression = 0;
-    other.imageSize = 0;
-    other.Xppm = 0;
-    other.Yppm = 0;
-    other.clrUsed = 0;
-    other.clrImportant = 0;
-    other.redMask = 0;
-    other.greenMask = 0;
-    other.blueMask = 0;
-    other.alphaMask = 0;
-    other.CSType = 0;
-}
-
-BitMapImage &BitMapImage::operator=(const BitMapImage &other) {
+void BitMapImage::deepCopy(const BitMapImage &other) {
     fileSize = other.fileSize;
     offBits = other.offBits;
     structSize = other.structSize;
@@ -174,9 +129,16 @@ BitMapImage &BitMapImage::operator=(const BitMapImage &other) {
     memcpy(image.get(), other.image.get(), width * height * 4);
 }
 
-BitMapImage::~BitMapImage() = default;
 
 
+BitMapImage::BitMapImage(BitMapImage &&other) noexcept {
+    std::swap(*this, other);
+}
+
+BitMapImage &BitMapImage::operator=(BitMapImage &&other) {
+    std::swap(*this, other);
+    return *this;
+}
 
 BitMapImage::BitMapImage(const char *filename) {
     unique_ptr<unsigned char[]> bitmapFileHeader = std::make_unique<unsigned char[]>(BMP_V4_HEADER_SIZE + BMP_FILE_HEADER_SIZE);
@@ -306,10 +268,10 @@ void BitMapImage::Blend(const BitMapImage &foreground, int x, int y) {
 
     for (int ycur = 0; ycur < foreground.height; ycur++) {
         for (int xcur = 0; xcur < foreground.width; xcur++) {
-            unsigned char alpha = foreground.image[(ycur * foreground.width + xcur) * 4 + 3];
-
             size_t bkg_pos = ((y + ycur) * width + x + xcur) * 4;
             size_t frg_pos = (ycur * foreground.width + xcur) * 4;
+
+            unsigned char alpha = foreground.image[frg_pos + 3];
 
             bkg_ptr[bkg_pos + 2] = (bkg_ptr[bkg_pos + 2] * (256 - alpha) + frg_ptr[frg_pos + 2] * alpha) / 256;
             bkg_ptr[bkg_pos + 1] = (bkg_ptr[bkg_pos + 1] * (256 - alpha) + frg_ptr[frg_pos + 1] * alpha) / 256;
@@ -322,7 +284,7 @@ int main() {
     BitMapImage bkg("Hood.BMP");
     BitMapImage frg("Cat.BMP");
 
-    for(int i = 0; i < 1; i++) {
+    for(int i = 0; i < 50000; i++) {
         bkg.Blend(frg, 328, 245);
     }
 
