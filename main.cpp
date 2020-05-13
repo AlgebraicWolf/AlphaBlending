@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <memory>
 #include <cstring>
+#include <immintrin.h>
 
 const unsigned int BMP_FILE_HEADER_SIZE = 14;
 const unsigned int BMP_V4_HEADER_SIZE = 108;
@@ -266,40 +267,99 @@ void BitMapImage::Blend(const BitMapImage &foreground, unsigned int x, unsigned 
     unsigned char *bkg_ptr = image.get();
     unsigned char *frg_ptr = foreground.image.get();
 
-    unsigned char bkg_line[256] = {};
-    unsigned char frg_line[256] = {};
-    unsigned char alpha1[256] = {};
-    unsigned char alpha2[256] = {};
+    unsigned char bkg_line[32] = {};
+    unsigned char bkg1_line[32] = {};
+    unsigned char bkg2_line[32] = {};
+    unsigned char frg_line[32] = {};
+    unsigned char frg1_line[32] = {};
+    unsigned char frg2_line[32] = {};
+    unsigned char result[32] = {};
 
     for (unsigned int ycur = 0; ycur < foreground.height; ycur++) {
-        for (unsigned int xcur = 0; xcur < foreground.width; xcur++) {
+        for (unsigned int xcur = 0; xcur < foreground.width - 8; xcur+=8) {
+
+            unsigned char diff1[32] = {};
+            unsigned char diff2[32] = {};
+            unsigned char alpha1[32] = {};
+            unsigned char alpha2[32] = {};
+//
             unsigned int bkg_pos = ((y + ycur) * width + x + xcur) << 2;
             unsigned int frg_pos = (ycur * foreground.width + xcur) << 2;
 
-//            /*
-//             *
-//             * Background: |B7|R7|G7|A7| |B6|R6|G6|A6| |B5|R5|G5|A5| |B4|R4|G4|A4| |B3|R3|G3|A3| |B2|R2|G2|A2| |B1|R1|G1|A1| |B0|R0|G0|A0|
-//             * Foreground: |B7|R7|G7|A7| |B6|R6|G6|A6| |B5|R5|G5|A5| |B4|R4|G4|A4| |B3|R3|G3|A3| |B2|R2|G2|A2| |B1|R1|G1|A1| |B0|R0|G0|A0|
-//             */
-//            for(unsigned int i = 0; i < 256; i++) bkg_line[i] = bkg_ptr[bkg_pos + i];
-//            for(unsigned int i = 0; i < 256; i++) frg_line[i] = bkg_ptr[frg_pos + i];
-//
-//            //Subtract background from foreground
-//            for(unsigned int i = 0; i < 256; i++) frg_line[i] -= bkg_line[i];
-//
-//            /*
-//             * Background 1: |__B3|__G3| |__R3|__A3| |__B2|__G2| |__R2|__A2| |__B1|__G1| |__R1|__A1| |__B0|__G0| |__R0|__A0|
-//             * Background 2: |__B7|__G7| |__R7|__A7| |__B6|__G6| |__R6|__A6| |__B5|__G5| |__R5|__A5| |__B4|__G4| |__R4|__A4|
-//             */
-//
-//            for(unsigned int i = 0; i < 256; i+=4) alpha1[i];
+            /*
+             *
+             * Background: |A7|R7|G7|B7| |A6|R6|G6|B6| |A5|R5|G5|B5| |A4|R4|G4|B4| |A3|R3|G3|B3| |A2|R2|G2|B2| |A1|R1|G1|B1| |A0|R0|G0|B0|
+             * Foreground: |A7|R7|G7|B7| |A6|R6|G6|B6| |A5|R5|G5|B5| |A4|R4|G4|B4| |A3|R3|G3|B3| |A2|R2|G2|B2| |A1|R1|G1|B1| |A0|R0|G0|B0|
+             */
+            for(unsigned int i = 0; i < 32; i++) bkg_line[i] = bkg_ptr[bkg_pos + i];
+            for(unsigned int i = 0; i < 32; i++) frg_line[i] = frg_ptr[frg_pos + i];
 
 
-            unsigned char alpha = foreground.image[frg_pos + 3];
+            /*
+             * Diff 1: |__A3|__R3| |__G3|__B3| |__A2|__R2| |__G2|__B2| |__A1|__R1| |__G1|__B1| |__A0|__R0| |__G0|__B0|
+             * Diff 2: |__A7|__R7| |__G7|__B7| |__A6|__R6| |__G6|__B6| |__A5|__R5| |__G5|__B5| |__A4|__R4| |__G4|__B4|
+             */
 
-            bkg_ptr[bkg_pos + 2] = (bkg_ptr[bkg_pos + 2]) + (((frg_ptr[frg_pos + 2] - bkg_ptr[bkg_pos + 2]) * alpha) >> 8);
-            bkg_ptr[bkg_pos + 1] = (bkg_ptr[bkg_pos + 1]) + (((frg_ptr[frg_pos + 1] - bkg_ptr[bkg_pos + 1]) * alpha) >> 8);
-            bkg_ptr[bkg_pos] = (bkg_ptr[bkg_pos]) + (((frg_ptr[frg_pos] - bkg_ptr[bkg_pos]) * alpha) >> 8);
+            for(unsigned int i = 0; i < 16; i++) frg1_line[2 * i] = frg_line[i];
+            for(unsigned int i = 16; i < 32; i++) frg2_line[2 * i - 32] = frg_line[i];
+
+            for(unsigned int i = 0; i < 16; i++) bkg1_line[2 * i] = bkg_line[i];
+            for(unsigned int i = 16; i < 32; i++) bkg2_line[2 * i - 32] = bkg_line[i];
+
+            for(unsigned int i = 0; i < 16; i++) reinterpret_cast<unsigned short *>(diff1)[i] = reinterpret_cast<unsigned short *>(frg1_line)[i] - reinterpret_cast<unsigned short *>(bkg1_line)[i];
+            for(unsigned int i = 0; i < 16; i++) reinterpret_cast<unsigned short *>(diff2)[i] = reinterpret_cast<unsigned short *>(frg2_line)[i] - reinterpret_cast<unsigned short *>(bkg2_line)[i];
+
+            /*
+             * Prepare alphas
+             * Alpha 1: |__A3|__A3| |__A3|__A3| |__A2|__A2| |__A2|__A2| |__A1|__A1| |__A1|__A1| |__A0|__A0| |__A0|__A0|
+             * Alpha 2: |__A7|__A7| |__A7|__A7| |__A6|__A6| |__A6|__A6| |__A5|__A5| |__A5|__A5| |__A4|__A4| |__A4|__A4|
+             */
+            for(unsigned int i = 0; i < 16; i+=4) alpha1[2 * i] = frg_line[i + 3];
+            for(unsigned int i = 0; i < 16; i+=4) alpha1[2 * i + 2] = frg_line[i + 3];
+            for(unsigned int i = 0; i < 16; i+=4) alpha1[2 * i + 4] = frg_line[i + 3];
+            for(unsigned int i = 0; i < 16; i+=4) alpha1[2 * i + 6] = frg_line[i + 3];
+
+            for(unsigned int i = 16; i < 32; i+=4) alpha2[2 * i - 32] = frg_line[i + 3];
+            for(unsigned int i = 16; i < 32; i+=4) alpha2[2 * i - 32 + 2] = frg_line[i + 3];
+            for(unsigned int i = 16; i < 32; i+=4) alpha2[2 * i - 32 + 4] = frg_line[i + 3];
+            for(unsigned int i = 16; i < 32; i+=4) alpha2[2 * i - 32 + 6] = frg_line[i + 3];
+
+            /*
+             * Multiply alphas
+             */
+            for(unsigned int i = 0; i < 16; i++)
+                reinterpret_cast<unsigned short *>(diff1)[i] *= reinterpret_cast<unsigned short *>(alpha1)[i];
+
+            for(unsigned int i = 0; i < 16; i++)
+                reinterpret_cast<unsigned short *>(diff2)[i] *= reinterpret_cast<unsigned short *>(alpha2)[i];
+
+            /*
+             * Exctract result bytes from diffs
+             */
+
+            for(int i = 0; i < 16; i++) result[i] = diff1[2 * i + 1];
+            for(int i = 16; i < 32; i++) result[i] = diff2[2 * i - 32 + 1];
+
+            for(int i = 0; i < 32; i++) result[i] += bkg_line[i];
+
+            /*
+             * Insert proper alpha
+             */
+            for(int i = 0; i < 32; i+=4) result[i + 3] = bkg_line[i + 3];
+
+            /*
+             * Store
+             */
+
+            for(int i = 0; i < 32; i++) bkg_ptr[bkg_pos + i] = result[i];
+
+//            unsigned char alpha = foreground.image[frg_pos + 3];
+//            unsigned char dif2 = (frg_ptr[frg_pos + 2] - bkg_ptr[bkg_pos + 2]);
+//            unsigned char dif1 = (frg_ptr[frg_pos + 1] - bkg_ptr[bkg_pos + 1]);
+//            unsigned char dif = (frg_ptr[frg_pos + 0] - bkg_ptr[bkg_pos + 0]);
+//            bkg_ptr[bkg_pos + 2] = (bkg_ptr[bkg_pos + 2]) + ((dif2 * alpha) >> 8);
+//            bkg_ptr[bkg_pos + 1] = (bkg_ptr[bkg_pos + 1]) + ((dif1 * alpha) >> 8);
+//            bkg_ptr[bkg_pos] = (bkg_ptr[bkg_pos]) + ((dif * alpha) >> 8);
         }
     }
 }
