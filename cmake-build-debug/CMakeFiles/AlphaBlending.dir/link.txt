@@ -1,1 +1,1 @@
-/usr/bin/g++   -march=native -O3 -g   CMakeFiles/AlphaBlending.dir/main.cpp.o  -o AlphaBlending 
+/usr/bin/g++   -march=native -O1 -g   CMakeFiles/AlphaBlending.dir/main.cpp.o  -o AlphaBlending 

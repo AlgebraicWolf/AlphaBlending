@@ -355,7 +355,7 @@ int main() {
     BitMapImage bkg("Hood.bmp");
     BitMapImage frg("Cat.bmp");
 
-    for (int i = 0; i < 100000; i++) {
+    for (int i = 0; i < 50000; i++) {
         bkg.Blend(frg, 328, 245);
     }
 
