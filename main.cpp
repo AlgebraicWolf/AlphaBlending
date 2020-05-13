@@ -10,24 +10,24 @@ const unsigned int BMP_V5_HEADER_SIZE = 124;
 using std::unique_ptr;
 
 struct free_deleter {
-    template <typename T>
+    template<typename T>
     void operator()(T *p) const {
-        std::free(const_cast<std::remove_const_t <T>*>(p));
+        std::free(const_cast<std::remove_const_t<T> *>(p));
     }
 };
 
 template<typename T>
-void bufWrite(const unique_ptr<unsigned char []> &out, T value, size_t& offset) {
+void bufWrite(const unique_ptr<unsigned char[]> &out, T value, size_t &offset) {
     memcpy(out.get() + offset, &value, sizeof(T));
     offset += sizeof(T);
 }
 
 class bufferWriter {
 private:
-    const unique_ptr<unsigned char []> &out;
+    const unique_ptr<unsigned char[]> &out;
     size_t offset;
 public:
-    bufferWriter(const unique_ptr<unsigned char []> &out) : out(out), offset(0) {}
+    bufferWriter(const unique_ptr<unsigned char[]> &out) : out(out), offset(0) {}
 
     ~bufferWriter() = default;
 
@@ -95,14 +95,16 @@ private:
 public:
 
     explicit BitMapImage(const char *filename);                      // Default constructor loading image
-    void deepCopy(const BitMapImage& other);                         // Actually copy assignment
+    void deepCopy(const BitMapImage &other);                         // Actually copy assignment
     BitMapImage(BitMapImage &&other) noexcept;                       // Move constructor
     BitMapImage(const BitMapImage &other) = delete;                  // Implicit copying is prohibited
-    BitMapImage &operator=(const BitMapImage &other) = delete;       // No implicit copying in order to avoid memory issues
+    BitMapImage &
+    operator=(const BitMapImage &other) = delete;       // No implicit copying in order to avoid memory issues
     BitMapImage &operator=(BitMapImage &&other);                     // Move assignment
     ~BitMapImage() noexcept = default;                               // Destructor
 
-    void Blend(const BitMapImage &foreground, unsigned int x, unsigned int y);       // Use alpha-blending to add picture on top
+    void Blend(const BitMapImage &foreground, unsigned int x,
+               unsigned int y);       // Use alpha-blending to add picture on top
     void Save(const char *filename);                        // Save BMP picture to file
 };
 
@@ -131,7 +133,6 @@ void BitMapImage::deepCopy(const BitMapImage &other) {
 }
 
 
-
 BitMapImage::BitMapImage(BitMapImage &&other) noexcept {
     std::swap(*this, other);
 }
@@ -142,11 +143,13 @@ BitMapImage &BitMapImage::operator=(BitMapImage &&other) {
 }
 
 BitMapImage::BitMapImage(const char *filename) {
-    unique_ptr<unsigned char[]> bitmapFileHeader = std::make_unique<unsigned char[]>(BMP_V4_HEADER_SIZE + BMP_FILE_HEADER_SIZE);
+    unique_ptr<unsigned char[]> bitmapFileHeader = std::make_unique<unsigned char[]>(
+            BMP_V4_HEADER_SIZE + BMP_FILE_HEADER_SIZE);
 
-    unique_ptr<FILE, int(*)(FILE *)> input (fopen(filename, "rb"), &fclose);
+    unique_ptr<FILE, int (*)(FILE *)> input(fopen(filename, "rb"), &fclose);
 
-    fread(bitmapFileHeader.get(), sizeof(unsigned char), BMP_V4_HEADER_SIZE + BMP_FILE_HEADER_SIZE, input.get());      // Read file header with BMP V4 Image header
+    fread(bitmapFileHeader.get(), sizeof(unsigned char), BMP_V4_HEADER_SIZE + BMP_FILE_HEADER_SIZE,
+          input.get());      // Read file header with BMP V4 Image header
 
     size_t offset = 0;
 
@@ -219,13 +222,14 @@ BitMapImage::BitMapImage(const char *filename) {
     }
 
 
-    image = unique_ptr<unsigned char[], free_deleter>(static_cast<unsigned char *>(aligned_alloc(32, width * height * 4)));
+    image = unique_ptr<unsigned char[], free_deleter>(
+            static_cast<unsigned char *>(aligned_alloc(32, width * height * 4)));
 
     fread(image.get(), sizeof(unsigned char), imageSize, input.get());
 }
 
 void BitMapImage::Save(const char *filename) {
-    unique_ptr<unsigned char []> outBuffer (new unsigned char [BMP_FILE_HEADER_SIZE + BMP_V4_HEADER_SIZE]);
+    unique_ptr<unsigned char[]> outBuffer(new unsigned char[BMP_FILE_HEADER_SIZE + BMP_V4_HEADER_SIZE]);
 
     auto writer = bufferWriter(outBuffer);
 
@@ -267,91 +271,74 @@ void BitMapImage::Blend(const BitMapImage &foreground, unsigned int x, unsigned 
     unsigned char *bkg_ptr = image.get();
     unsigned char *frg_ptr = foreground.image.get();
 
-    unsigned char bkg_line[32] = {};
-    unsigned char bkg1_line[32] = {};
-    unsigned char bkg2_line[32] = {};
-    unsigned char frg_line[32] = {};
-    unsigned char frg1_line[32] = {};
-    unsigned char frg2_line[32] = {};
-    unsigned char result[32] = {};
+
+    const __m128i low_pixel_line_half = _mm_setr_epi8(0, 0x80, 1, 0x80, 2, 0x80, 3, 0x80, 4, 0x80, 5, 0x80, 6, 0x80, 7,
+                                                      0x80);
+    const __m128i high_pixel_line_half = _mm_setr_epi8(8, 0x80, 9, 0x80, 10, 0x80, 11, 0x80, 12, 0x80, 13, 0x80, 14,
+                                                       0x80, 15, 0x80);
+    const __m128i alpha_mask = _mm_setr_epi8(6, 0x80, 6, 0x80, 6, 0x80, 6, 0x80, 14, 0x80, 14, 0x80, 14, 0x80, 14,
+                                             0x80);
+    const __m128i store_low_half = _mm_setr_epi8(1, 3, 5, 0x80, 9, 11, 13, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+                                                 0x80, 0x80);
+    const __m128i store_high_half = _mm_setr_epi8(0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 1, 3, 5, 0x80, 9, 11,
+                                                  13, 0x80);
 
     for (unsigned int ycur = 0; ycur < foreground.height; ycur++) {
-        for (unsigned int xcur = 0; xcur < foreground.width - 8; xcur+=8) {
+        for (unsigned int xcur = 0; xcur < foreground.width - 4; xcur += 4) {
 
-            unsigned char diff1[32] = {};
-            unsigned char diff2[32] = {};
-            unsigned char alpha1[32] = {};
-            unsigned char alpha2[32] = {};
-//
             unsigned int bkg_pos = ((y + ycur) * width + x + xcur) << 2;
             unsigned int frg_pos = (ycur * foreground.width + xcur) << 2;
 
             /*
              *
-             * Background: |A7|R7|G7|B7| |A6|R6|G6|B6| |A5|R5|G5|B5| |A4|R4|G4|B4| |A3|R3|G3|B3| |A2|R2|G2|B2| |A1|R1|G1|B1| |A0|R0|G0|B0|
-             * Foreground: |A7|R7|G7|B7| |A6|R6|G6|B6| |A5|R5|G5|B5| |A4|R4|G4|B4| |A3|R3|G3|B3| |A2|R2|G2|B2| |A1|R1|G1|B1| |A0|R0|G0|B0|
+             * Background: |A3|R3|G3|B3| |A2|R2|G2|B2| |A1|R1|G1|B1| |A0|R0|G0|B0|
+             * Foreground: |A3|R3|G3|B3| |A2|R2|G2|B2| |A1|R1|G1|B1| |A0|R0|G0|B0|
              */
-            for(unsigned int i = 0; i < 32; i++) bkg_line[i] = bkg_ptr[bkg_pos + i];
-            for(unsigned int i = 0; i < 32; i++) frg_line[i] = frg_ptr[frg_pos + i];
+            __m128i bkg = _mm_load_si128(reinterpret_cast<const __m128i *>(bkg_ptr + bkg_pos));
+            __m128i frg = _mm_load_si128(reinterpret_cast<const __m128i *>(frg_ptr + frg_pos));
 
+
+            __m128i bkg1 = _mm_shuffle_epi8(bkg, low_pixel_line_half);
+            __m128i bkg2 = _mm_shuffle_epi8(bkg, high_pixel_line_half);
+
+            __m128i frg1 = _mm_shuffle_epi8(frg, low_pixel_line_half);
+            __m128i frg2 = _mm_shuffle_epi8(frg, high_pixel_line_half);
 
             /*
-             * Diff 1: |__A3|__R3| |__G3|__B3| |__A2|__R2| |__G2|__B2| |__A1|__R1| |__G1|__B1| |__A0|__R0| |__G0|__B0|
-             * Diff 2: |__A7|__R7| |__G7|__B7| |__A6|__R6| |__G6|__B6| |__A5|__R5| |__G5|__B5| |__A4|__R4| |__G4|__B4|
+             * Diff 1: |__A1|__R1| |__G1|__B1| |__A0|__R0| |__G0|__B0|
+             * Diff 2: |__A3|__R3| |__G3|__B3| |__A2|__R2| |__G2|__B2|
              */
 
-            for(unsigned int i = 0; i < 16; i++) frg1_line[2 * i] = frg_line[i];
-            for(unsigned int i = 16; i < 32; i++) frg2_line[2 * i - 32] = frg_line[i];
-
-            for(unsigned int i = 0; i < 16; i++) bkg1_line[2 * i] = bkg_line[i];
-            for(unsigned int i = 16; i < 32; i++) bkg2_line[2 * i - 32] = bkg_line[i];
-
-            for(unsigned int i = 0; i < 16; i++) reinterpret_cast<unsigned short *>(diff1)[i] = reinterpret_cast<unsigned short *>(frg1_line)[i] - reinterpret_cast<unsigned short *>(bkg1_line)[i];
-            for(unsigned int i = 0; i < 16; i++) reinterpret_cast<unsigned short *>(diff2)[i] = reinterpret_cast<unsigned short *>(frg2_line)[i] - reinterpret_cast<unsigned short *>(bkg2_line)[i];
+            __m128i diff1 = _mm_sub_epi16(frg1, bkg1);
+            __m128i diff2 = _mm_sub_epi16(frg2, bkg2);
 
             /*
              * Prepare alphas
-             * Alpha 1: |__A3|__A3| |__A3|__A3| |__A2|__A2| |__A2|__A2| |__A1|__A1| |__A1|__A1| |__A0|__A0| |__A0|__A0|
-             * Alpha 2: |__A7|__A7| |__A7|__A7| |__A6|__A6| |__A6|__A6| |__A5|__A5| |__A5|__A5| |__A4|__A4| |__A4|__A4|
+             * Alpha 1: |__A1|__A1| |__A1|__A1| |__A0|__A0| |__A0|__A0|
+             * Alpha 2: |__A3|__A3| |__A3|__A3| |__A2|__A2| |__A2|__A2|
              */
-            for(unsigned int i = 0; i < 16; i+=4) alpha1[2 * i] = frg_line[i + 3];
-            for(unsigned int i = 0; i < 16; i+=4) alpha1[2 * i + 2] = frg_line[i + 3];
-            for(unsigned int i = 0; i < 16; i+=4) alpha1[2 * i + 4] = frg_line[i + 3];
-            for(unsigned int i = 0; i < 16; i+=4) alpha1[2 * i + 6] = frg_line[i + 3];
-
-            for(unsigned int i = 16; i < 32; i+=4) alpha2[2 * i - 32] = frg_line[i + 3];
-            for(unsigned int i = 16; i < 32; i+=4) alpha2[2 * i - 32 + 2] = frg_line[i + 3];
-            for(unsigned int i = 16; i < 32; i+=4) alpha2[2 * i - 32 + 4] = frg_line[i + 3];
-            for(unsigned int i = 16; i < 32; i+=4) alpha2[2 * i - 32 + 6] = frg_line[i + 3];
-
+            __m128i alpha1 = _mm_shuffle_epi8(frg1, alpha_mask);
+            __m128i alpha2 = _mm_shuffle_epi8(frg2, alpha_mask);
             /*
              * Multiply alphas
              */
-            for(unsigned int i = 0; i < 16; i++)
-                reinterpret_cast<unsigned short *>(diff1)[i] *= reinterpret_cast<unsigned short *>(alpha1)[i];
 
-            for(unsigned int i = 0; i < 16; i++)
-                reinterpret_cast<unsigned short *>(diff2)[i] *= reinterpret_cast<unsigned short *>(alpha2)[i];
+            diff1 = _mm_mullo_epi16(diff1, alpha1);
+            diff2 = _mm_mullo_epi16(diff2, alpha2);
 
             /*
              * Exctract result bytes from diffs
              */
+            __m128i res1 = _mm_shuffle_epi8(diff1, store_low_half);
+            __m128i res2 = _mm_shuffle_epi8(diff2, store_high_half);
+            __m128i result = _mm_add_epi8(res1, res2);
+            result = _mm_add_epi8(result, bkg);
 
-            for(int i = 0; i < 16; i++) result[i] = diff1[2 * i + 1];
-            for(int i = 16; i < 32; i++) result[i] = diff2[2 * i - 32 + 1];
-
-            for(int i = 0; i < 32; i++) result[i] += bkg_line[i];
-
-            /*
-             * Insert proper alpha
-             */
-            for(int i = 0; i < 32; i+=4) result[i + 3] = bkg_line[i + 3];
 
             /*
              * Store
              */
-
-            for(int i = 0; i < 32; i++) bkg_ptr[bkg_pos + i] = result[i];
+            _mm_store_si128(reinterpret_cast<__m128i *>(bkg_ptr + bkg_pos), result);
 
 //            unsigned char alpha = foreground.image[frg_pos + 3];
 //            unsigned char dif2 = (frg_ptr[frg_pos + 2] - bkg_ptr[bkg_pos + 2]);
@@ -368,7 +355,7 @@ int main() {
     BitMapImage bkg("Hood.bmp");
     BitMapImage frg("Cat.bmp");
 
-    for(int i = 0; i < 50000; i++) {
+    for (int i = 0; i < 100000; i++) {
         bkg.Blend(frg, 328, 245);
     }
 
