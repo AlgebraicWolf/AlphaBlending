@@ -266,18 +266,40 @@ void BitMapImage::Blend(const BitMapImage &foreground, unsigned int x, unsigned 
     unsigned char *bkg_ptr = image.get();
     unsigned char *frg_ptr = foreground.image.get();
 
-//    unsigned char alpha[8] = {};
-    
+    unsigned char bkg_line[256] = {};
+    unsigned char frg_line[256] = {};
+    unsigned char alpha1[256] = {};
+    unsigned char alpha2[256] = {};
+
     for (unsigned int ycur = 0; ycur < foreground.height; ycur++) {
         for (unsigned int xcur = 0; xcur < foreground.width; xcur++) {
             unsigned int bkg_pos = ((y + ycur) * width + x + xcur) << 2;
             unsigned int frg_pos = (ycur * foreground.width + xcur) << 2;
 
+//            /*
+//             *
+//             * Background: |B7|R7|G7|A7| |B6|R6|G6|A6| |B5|R5|G5|A5| |B4|R4|G4|A4| |B3|R3|G3|A3| |B2|R2|G2|A2| |B1|R1|G1|A1| |B0|R0|G0|A0|
+//             * Foreground: |B7|R7|G7|A7| |B6|R6|G6|A6| |B5|R5|G5|A5| |B4|R4|G4|A4| |B3|R3|G3|A3| |B2|R2|G2|A2| |B1|R1|G1|A1| |B0|R0|G0|A0|
+//             */
+//            for(unsigned int i = 0; i < 256; i++) bkg_line[i] = bkg_ptr[bkg_pos + i];
+//            for(unsigned int i = 0; i < 256; i++) frg_line[i] = bkg_ptr[frg_pos + i];
+//
+//            //Subtract background from foreground
+//            for(unsigned int i = 0; i < 256; i++) frg_line[i] -= bkg_line[i];
+//
+//            /*
+//             * Background 1: |__B3|__G3| |__R3|__A3| |__B2|__G2| |__R2|__A2| |__B1|__G1| |__R1|__A1| |__B0|__G0| |__R0|__A0|
+//             * Background 2: |__B7|__G7| |__R7|__A7| |__B6|__G6| |__R6|__A6| |__B5|__G5| |__R5|__A5| |__B4|__G4| |__R4|__A4|
+//             */
+//
+//            for(unsigned int i = 0; i < 256; i+=4) alpha1[i];
+
+
             unsigned char alpha = foreground.image[frg_pos + 3];
 
-            bkg_ptr[bkg_pos + 2] = (bkg_ptr[bkg_pos + 2] * (256 - alpha) + frg_ptr[frg_pos + 2] * alpha) >> 8;
-            bkg_ptr[bkg_pos + 1] = (bkg_ptr[bkg_pos + 1] * (256 - alpha) + frg_ptr[frg_pos + 1] * alpha) >> 8;
-            bkg_ptr[bkg_pos] = (bkg_ptr[bkg_pos] * (256 - alpha) + frg_ptr[frg_pos] * alpha) >> 8;
+            bkg_ptr[bkg_pos + 2] = (bkg_ptr[bkg_pos + 2]) + (((frg_ptr[frg_pos + 2] - bkg_ptr[bkg_pos + 2]) * alpha) >> 8);
+            bkg_ptr[bkg_pos + 1] = (bkg_ptr[bkg_pos + 1]) + (((frg_ptr[frg_pos + 1] - bkg_ptr[bkg_pos + 1]) * alpha) >> 8);
+            bkg_ptr[bkg_pos] = (bkg_ptr[bkg_pos]) + (((frg_ptr[frg_pos] - bkg_ptr[bkg_pos]) * alpha) >> 8);
         }
     }
 }
