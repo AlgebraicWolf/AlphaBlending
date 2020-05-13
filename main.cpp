@@ -281,8 +281,8 @@ void BitMapImage::Blend(const BitMapImage &foreground, int x, int y) {
 }
 
 int main() {
-    BitMapImage bkg("Hood.BMP");
-    BitMapImage frg("Cat.BMP");
+    BitMapImage bkg("Hood.bmp");
+    BitMapImage frg("Cat.bmp");
 
     for(int i = 0; i < 50000; i++) {
         bkg.Blend(frg, 328, 245);
