@@ -101,7 +101,7 @@ public:
     BitMapImage &operator=(BitMapImage &&other);                     // Move assignment
     ~BitMapImage() noexcept = default;                               // Destructor
 
-    void Blend(const BitMapImage &foreground, int x, int y);       // Use alpha-blending to add picture on top
+    void Blend(const BitMapImage &foreground, unsigned int x, unsigned int y);       // Use alpha-blending to add picture on top
     void Save(const char *filename);                        // Save BMP picture to file
 };
 
@@ -262,20 +262,22 @@ void BitMapImage::Save(const char *filename) {
     fwrite(image.get(), sizeof(unsigned char), imageSize, output.get());
 }
 
-void BitMapImage::Blend(const BitMapImage &foreground, int x, int y) {
+void BitMapImage::Blend(const BitMapImage &foreground, unsigned int x, unsigned int y) {
     unsigned char *bkg_ptr = image.get();
     unsigned char *frg_ptr = foreground.image.get();
 
-    for (int ycur = 0; ycur < foreground.height; ycur++) {
-        for (int xcur = 0; xcur < foreground.width; xcur++) {
-            size_t bkg_pos = ((y + ycur) * width + x + xcur) * 4;
-            size_t frg_pos = (ycur * foreground.width + xcur) * 4;
+//    unsigned char alpha[8] = {};
+    
+    for (unsigned int ycur = 0; ycur < foreground.height; ycur++) {
+        for (unsigned int xcur = 0; xcur < foreground.width; xcur++) {
+            unsigned int bkg_pos = ((y + ycur) * width + x + xcur) << 2;
+            unsigned int frg_pos = (ycur * foreground.width + xcur) << 2;
 
             unsigned char alpha = foreground.image[frg_pos + 3];
 
-            bkg_ptr[bkg_pos + 2] = (bkg_ptr[bkg_pos + 2] * (256 - alpha) + frg_ptr[frg_pos + 2] * alpha) / 256;
-            bkg_ptr[bkg_pos + 1] = (bkg_ptr[bkg_pos + 1] * (256 - alpha) + frg_ptr[frg_pos + 1] * alpha) / 256;
-            bkg_ptr[bkg_pos] = (bkg_ptr[bkg_pos] * (256 - alpha) + frg_ptr[frg_pos] * alpha) / 256;
+            bkg_ptr[bkg_pos + 2] = (bkg_ptr[bkg_pos + 2] * (256 - alpha) + frg_ptr[frg_pos + 2] * alpha) >> 8;
+            bkg_ptr[bkg_pos + 1] = (bkg_ptr[bkg_pos + 1] * (256 - alpha) + frg_ptr[frg_pos + 1] * alpha) >> 8;
+            bkg_ptr[bkg_pos] = (bkg_ptr[bkg_pos] * (256 - alpha) + frg_ptr[frg_pos] * alpha) >> 8;
         }
     }
 }
