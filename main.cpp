@@ -271,74 +271,122 @@ void BitMapImage::Blend(const BitMapImage &foreground, unsigned int x, unsigned 
     unsigned char *bkg_ptr = image.get();
     unsigned char *frg_ptr = foreground.image.get();
 
+//
+//    const __m128i low_pixel_line_half = _mm_setr_epi8(0, 0x80, 1, 0x80, 2, 0x80, 3, 0x80, 4, 0x80, 5, 0x80, 6, 0x80, 7,
+//                                                      0x80);
+//    const __m128i high_pixel_line_half = _mm_setr_epi8(8, 0x80, 9, 0x80, 10, 0x80, 11, 0x80, 12, 0x80, 13, 0x80, 14,
+//                                                       0x80, 15, 0x80);
+//    const __m128i alpha_mask = _mm_setr_epi8(6, 0x80, 6, 0x80, 6, 0x80, 6, 0x80, 14, 0x80, 14, 0x80, 14, 0x80, 14,
+//                                             0x80);
+//    const __m128i store_low_half = _mm_setr_epi8(1, 3, 5, 0x80, 9, 11, 13, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+//                                                 0x80, 0x80);
+//    const __m128i store_high_half = _mm_setr_epi8(0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 1, 3, 5, 0x80, 9, 11,
+//                                                  13, 0x80);
 
-    const __m128i low_pixel_line_half = _mm_setr_epi8(0, 0x80, 1, 0x80, 2, 0x80, 3, 0x80, 4, 0x80, 5, 0x80, 6, 0x80, 7,
-                                                      0x80);
-    const __m128i high_pixel_line_half = _mm_setr_epi8(8, 0x80, 9, 0x80, 10, 0x80, 11, 0x80, 12, 0x80, 13, 0x80, 14,
-                                                       0x80, 15, 0x80);
-    const __m128i alpha_mask = _mm_setr_epi8(6, 0x80, 6, 0x80, 6, 0x80, 6, 0x80, 14, 0x80, 14, 0x80, 14, 0x80, 14,
-                                             0x80);
-    const __m128i store_low_half = _mm_setr_epi8(1, 3, 5, 0x80, 9, 11, 13, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
-                                                 0x80, 0x80);
-    const __m128i store_high_half = _mm_setr_epi8(0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 1, 3, 5, 0x80, 9, 11,
-                                                  13, 0x80);
+
+
+    const __m256i zeroes = _mm256_setr_epi8(0, 0, 0, 0, 0, 0, 0, 0,
+                                            0, 0, 0, 0, 0, 0, 0, 0,
+                                            0, 0, 0, 0, 0, 0, 0, 0,
+                                            0, 0, 0, 0, 0, 0, 0, 0);
+
+    const __m256i alpha_mask = _mm256_setr_epi8(6,  0x80, 6,  0x80, 6,  0x80, 6,  0x80,
+                                                14, 0x80, 14, 0x80, 14, 0x80, 14, 0x80,
+                                                22, 0x80, 22, 0x80, 22, 0x80, 22, 0x80,
+                                                30, 0x80, 30, 0x80, 30, 0x80, 30, 0x80);
+
+    const __m256i store_low_half = _mm256_setr_epi8(1,    3,    5,    0x80, 9,    11,   13,   0x80,
+                                                    0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+                                                    17,   19,   21,   0x80, 25,   27,   29,   0x80,
+                                                    0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80);
+
+    const __m256i store_high_half = _mm256_setr_epi8(0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+                                                     1,    3,    5,    0x80, 9,    11,   13,   0x80,
+                                                     0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+                                                     17,   19,   21,   0x80, 25,   27,   29,   0x80);
 
     for (unsigned int ycur = 0; ycur < foreground.height; ycur++) {
-        for (unsigned int xcur = 0; xcur < foreground.width - 4; xcur += 4) {
+        for (unsigned int xcur = 0; xcur < foreground.width - 8; xcur += 8) {
 
             unsigned int bkg_pos = ((y + ycur) * width + x + xcur) << 2;
             unsigned int frg_pos = (ycur * foreground.width + xcur) << 2;
 
-            /*
-             *
-             * Background: |A3|R3|G3|B3| |A2|R2|G2|B2| |A1|R1|G1|B1| |A0|R0|G0|B0|
-             * Foreground: |A3|R3|G3|B3| |A2|R2|G2|B2| |A1|R1|G1|B1| |A0|R0|G0|B0|
-             */
-            __m128i bkg = _mm_load_si128(reinterpret_cast<const __m128i *>(bkg_ptr + bkg_pos));
-            __m128i frg = _mm_load_si128(reinterpret_cast<const __m128i *>(frg_ptr + frg_pos));
+//            /*
+//             *
+//             * Background: |A3|R3|G3|B3| |A2|R2|G2|B2| |A1|R1|G1|B1| |A0|R0|G0|B0|
+//             * Foreground: |A3|R3|G3|B3| |A2|R2|G2|B2| |A1|R1|G1|B1| |A0|R0|G0|B0|
+//             */
+//            __m128i bkg = _mm_load_si128(reinterpret_cast<const __m128i *>(bkg_ptr + bkg_pos));
+//            __m128i frg = _mm_load_si128(reinterpret_cast<const __m128i *>(frg_ptr + frg_pos));
 
+            __m256i bkg = _mm256_lddqu_si256(reinterpret_cast<const __m256i *>(bkg_ptr + bkg_pos));
+            __m256i frg = _mm256_lddqu_si256(reinterpret_cast<const __m256i *>(frg_ptr + frg_pos));
 
-            __m128i bkg1 = _mm_shuffle_epi8(bkg, low_pixel_line_half);
-            __m128i bkg2 = _mm_shuffle_epi8(bkg, high_pixel_line_half);
+//            __m128i bkg1 = _mm_shuffle_epi8(bkg, low_pixel_line_half);
+//            __m128i bkg2 = _mm_shuffle_epi8(bkg, high_pixel_line_half);
 
-            __m128i frg1 = _mm_shuffle_epi8(frg, low_pixel_line_half);
-            __m128i frg2 = _mm_shuffle_epi8(frg, high_pixel_line_half);
+            __m256i bkg1 = _mm256_unpacklo_epi8(bkg, zeroes);
+            __m256i bkg2 = _mm256_unpackhi_epi8(bkg, zeroes);
 
-            /*
-             * Diff 1: |__A1|__R1| |__G1|__B1| |__A0|__R0| |__G0|__B0|
-             * Diff 2: |__A3|__R3| |__G3|__B3| |__A2|__R2| |__G2|__B2|
-             */
+//            __m128i frg1 = _mm_shuffle_epi8(frg, low_pixel_line_half);
+//            __m128i frg2 = _mm_shuffle_epi8(frg, high_pixel_line_half);
 
-            __m128i diff1 = _mm_sub_epi16(frg1, bkg1);
-            __m128i diff2 = _mm_sub_epi16(frg2, bkg2);
+            __m256i frg1 = _mm256_unpacklo_epi8(frg, zeroes);
+            __m256i frg2 = _mm256_unpackhi_epi8(frg, zeroes);
 
-            /*
-             * Prepare alphas
-             * Alpha 1: |__A1|__A1| |__A1|__A1| |__A0|__A0| |__A0|__A0|
-             * Alpha 2: |__A3|__A3| |__A3|__A3| |__A2|__A2| |__A2|__A2|
-             */
-            __m128i alpha1 = _mm_shuffle_epi8(frg1, alpha_mask);
-            __m128i alpha2 = _mm_shuffle_epi8(frg2, alpha_mask);
-            /*
-             * Multiply alphas
-             */
+//            /*
+//             * Diff 1: |__A1|__R1| |__G1|__B1| |__A0|__R0| |__G0|__B0|
+//             * Diff 2: |__A3|__R3| |__G3|__B3| |__A2|__R2| |__G2|__B2|
+//             */
+//
+//            __m128i diff1 = _mm_sub_epi16(frg1, bkg1);
+//            __m128i diff2 = _mm_sub_epi16(frg2, bkg2);
 
-            diff1 = _mm_mullo_epi16(diff1, alpha1);
-            diff2 = _mm_mullo_epi16(diff2, alpha2);
+            __m256i diff1 = _mm256_sub_epi16(frg1, bkg1);
+            __m256i diff2 = _mm256_sub_epi16(frg2, bkg2);
 
-            /*
-             * Exctract result bytes from diffs
-             */
-            __m128i res1 = _mm_shuffle_epi8(diff1, store_low_half);
-            __m128i res2 = _mm_shuffle_epi8(diff2, store_high_half);
-            __m128i result = _mm_add_epi8(res1, res2);
-            result = _mm_add_epi8(result, bkg);
+//
+//            /*
+//             * Prepare alphas
+//             * Alpha 1: |__A1|__A1| |__A1|__A1| |__A0|__A0| |__A0|__A0|
+//             * Alpha 2: |__A3|__A3| |__A3|__A3| |__A2|__A2| |__A2|__A2|
+//             */
+//            __m128i alpha1 = _mm_shuffle_epi8(frg1, alpha_mask);
+//            __m128i alpha2 = _mm_shuffle_epi8(frg2, alpha_mask);
 
+            __m256i alpha1 = _mm256_shuffle_epi8(frg1, alpha_mask);
+            __m256i alpha2 = _mm256_shuffle_epi8(frg2, alpha_mask);
 
-            /*
-             * Store
-             */
-            _mm_store_si128(reinterpret_cast<__m128i *>(bkg_ptr + bkg_pos), result);
+//            /*
+//             * Multiply alphas
+//             */
+//
+//            diff1 = _mm_mullo_epi16(diff1, alpha1);
+//            diff2 = _mm_mullo_epi16(diff2, alpha2);
+
+            diff1 = _mm256_mullo_epi16(diff1, alpha1);
+            diff2 = _mm256_mullo_epi16(diff2, alpha2);
+
+//
+//            /*
+//             * Exctract result bytes from diffs
+//             */
+//            __m128i res1 = _mm_shuffle_epi8(diff1, store_low_half);
+//            __m128i res2 = _mm_shuffle_epi8(diff2, store_high_half);
+//            __m128i result = _mm_add_epi8(res1, res2);
+//            result = _mm_add_epi8(result, bkg);
+
+            __m256i res1 = _mm256_shuffle_epi8(diff1, store_low_half);
+            __m256i res2 = _mm256_shuffle_epi8(diff2, store_high_half);
+            __m256i result = _mm256_add_epi8(res1, res2);
+            result = _mm256_add_epi8(result, bkg);
+
+//
+//            /*
+//             * Store
+//             */
+//            _mm_store_si128(reinterpret_cast<__m128i *>(bkg_ptr + bkg_pos), result);
+            _mm256_storeu_si256(reinterpret_cast<__m256i *>(bkg_ptr + bkg_pos), result);
 
 //            unsigned char alpha = foreground.image[frg_pos + 3];
 //            unsigned char dif2 = (frg_ptr[frg_pos + 2] - bkg_ptr[bkg_pos + 2]);
